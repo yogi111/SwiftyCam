@@ -1475,21 +1475,22 @@ extension SwiftyCamViewController {
 			//ignore pinch
 			return
 		}
+		// videoDevice is nil when no capture device was configured (e.g. permission denied, camera unavailable)
+		guard let captureDevice = videoDevice else {
+			return
+		}
 		do {
-            let captureDevice = videoDevice
-			//let captureDevice = AVCaptureDevice.devices().first
-			try captureDevice?.lockForConfiguration()
+			try captureDevice.lockForConfiguration()
+			defer { captureDevice.unlockForConfiguration() }
 
-			zoomScale = min(maxZoomScale, max(1.0, min(beginZoomScale * pinch.scale,  captureDevice!.activeFormat.videoMaxZoomFactor)))
+			zoomScale = min(maxZoomScale, max(1.0, min(beginZoomScale * pinch.scale,  captureDevice.activeFormat.videoMaxZoomFactor)))
 
-			captureDevice?.videoZoomFactor = zoomScale
+			captureDevice.videoZoomFactor = zoomScale
 
 			// Call Delegate function with current zoom scale
 			DispatchQueue.main.async {
 				self.cameraDelegate?.swiftyCam(self, didChangeZoomLevel: self.zoomScale)
 			}
-
-			captureDevice?.unlockForConfiguration()
 
 		} catch {
 			print("[SwiftyCam]: Error locking configuration")
@@ -1551,31 +1552,32 @@ extension SwiftyCamViewController {
         let currentTranslation    = pan.translation(in: view).y
         let translationDifference = currentTranslation - previousPanTranslation
 
-        do {
-            //let captureDevice = AVCaptureDevice.devices().first
-            let captureDevice = videoDevice
-            try captureDevice?.lockForConfiguration()
+        // videoDevice is nil when no capture device was configured (e.g. permission denied, camera unavailable).
+        // Skip zooming but still update previousPanTranslation below so it does not go stale.
+        if let captureDevice = videoDevice {
+            do {
+                try captureDevice.lockForConfiguration()
+                defer { captureDevice.unlockForConfiguration() }
 
-            let currentZoom = captureDevice?.videoZoomFactor ?? 0.0
+                let currentZoom = captureDevice.videoZoomFactor
+                let maxZoom = captureDevice.activeFormat.videoMaxZoomFactor
 
-            if swipeToZoomInverted == true {
-                zoomScale = min(maxZoomScale, max(1.0, min(currentZoom - (translationDifference / 75),  captureDevice!.activeFormat.videoMaxZoomFactor)))
-            } else {
-                zoomScale = min(maxZoomScale, max(1.0, min(currentZoom + (translationDifference / 75),  captureDevice!.activeFormat.videoMaxZoomFactor)))
+                if swipeToZoomInverted == true {
+                    zoomScale = min(maxZoomScale, max(1.0, min(currentZoom - (translationDifference / 75),  maxZoom)))
+                } else {
+                    zoomScale = min(maxZoomScale, max(1.0, min(currentZoom + (translationDifference / 75),  maxZoom)))
+                }
 
+                captureDevice.videoZoomFactor = zoomScale
+
+                // Call Delegate function with current zoom scale
+                DispatchQueue.main.async {
+                    self.cameraDelegate?.swiftyCam(self, didChangeZoomLevel: self.zoomScale)
+                }
+
+            } catch {
+                print("[SwiftyCam]: Error locking configuration")
             }
-
-            captureDevice?.videoZoomFactor = zoomScale
-
-            // Call Delegate function with current zoom scale
-            DispatchQueue.main.async {
-                self.cameraDelegate?.swiftyCam(self, didChangeZoomLevel: self.zoomScale)
-            }
-
-            captureDevice?.unlockForConfiguration()
-
-        } catch {
-            print("[SwiftyCam]: Error locking configuration")
         }
 
         if pan.state == .ended || pan.state == .failed || pan.state == .cancelled {
